@@ -1,37 +1,40 @@
-# Run the Ben 10 pet
+# 🚀 Ben 10 Desktop Pet Quickstart Guide
 
-## 1. Clone the repository
+Follow these simple steps to run your Ben 10 Desktop Pet on Windows 10/11.
 
-```bash
-git clone https://github.com/ranjiths112007/Desktop-pets.git
-cd Desktop-pets
-```
+## 1. Setup Environment
 
-## 2. Install the dependency
+Open your terminal or Command Prompt in the project folder:
 
 ```bash
-python -m pip install -r requirements.txt
+pip install -r requirements.txt
 ```
 
-## 3. Add your images
+## 2. Run the Pet Engine
 
-Create an `assets` folder and copy your files into it:
+You can start the pet using either launcher command:
 
-- `assets/ben10.jpg` — the Ben Tennyson image you supplied
-- `assets/heatblast.png` — the Heatblast image you supplied
+```bash
+python main.py
+```
 
-The Ben image is cropped to its right side automatically to remove the logo area. Near-white pixels are made transparent.
-
-## 4. Start
+or:
 
 ```bash
 python ben10_pet.py
 ```
 
-## Controls
+## 3. Controls Quick Reference
 
-- **Double-click** or **Space**: activate the Omnitrix and transform
-- **Left-click + drag**: move the pet
-- **Right-click** or **Escape**: close the pet
+- **Space Bar** or **Double-Click**: Activate Omnitrix & Transform into Heatblast (or return to Ben).
+- **Left Mouse Click + Drag**: Drag Ben or Heatblast anywhere on your desktop screen.
+- **Right Mouse Click**: Open the Context Menu (Transform, Hop, Pause/Resume, Exit).
+- **Escape Key**: Instantly close the application.
 
-If the images are missing, the app uses a simple vector fallback so the program still launches.
+## 4. Run Automated Tests
+
+To verify asset loading and state machine logic:
+
+```bash
+python tests/test_assets.py
+```
