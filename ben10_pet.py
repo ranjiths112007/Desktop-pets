@@ -103,15 +103,22 @@ class Ben10Pet:
         self.tframe = 0
         self.particles_list = []
 
-    def shape(self, kind, pts, fill, outline="", width=1):
+    def polygon(self, pts, fill, outline="", width=1):
         vals = [v for p in pts for v in p]
-        getattr(self.c, kind)(*vals, fill=fill, outline=outline, width=width)
+        if outline:
+            self.c.create_polygon(*vals, fill=fill, outline=outline, width=width)
+        else:
+            self.c.create_polygon(*vals, fill=fill)
 
     def oval(self, box, fill="", outline="", width=1):
-        self.c.create_oval(*box, fill=fill, outline=outline, width=width)
+        if outline:
+            self.c.create_oval(*box, fill=fill, outline=outline, width=width)
+        else:
+            self.c.create_oval(*box, fill=fill)
 
-    def line(self, pts, fill, width):
-        self.shape("create_line", pts, fill, width=width)
+    def line(self, pts, fill, width=1):
+        vals = [v for p in pts for v in p]
+        self.c.create_line(*vals, fill=fill, width=width)
 
     def omnitrix(self, x, y, active=False):
         if active:
@@ -120,7 +127,7 @@ class Ben10Pet:
         self.oval((x - 18, y - 12, x + 18, y + 12), "#3C3C3C", BLACK, 2)
         self.oval((x - 10, y - 10, x + 10, y + 10), "#BDBDBD", BLACK, 2)
         self.oval((x - 8, y - 8, x + 8, y + 8), GREEN if active else "#4E7B22", BLACK, 2)
-        self.shape("create_polygon", [(x, y - 6), (x + 6, y), (x, y + 6), (x - 6, y)], "#F2FFF0", BLACK)
+        self.polygon([(x, y - 6), (x + 6, y), (x, y + 6), (x - 6, y)], "#F2FFF0", BLACK)
 
     def ben(self, bob=0):
         x, y = 165, 170 + bob
@@ -129,15 +136,14 @@ class Ben10Pet:
         self.line([(x + 18, y + 92), (x + 38, y + 166)], "#252525", 23)
         self.line([(x - 42, y + 166), (x - 18, y + 166)], "#FFFFFF", 11)
         self.line([(x + 18, y + 166), (x + 46, y + 166)], "#FFFFFF", 11)
-        self.shape("create_polygon", [(x - 38, y - 40), (x + 38, y - 40), (x + 47, y + 65), (x - 47, y + 65)], "#F2F2F2", BLACK, 3)
-        self.shape("create_polygon", [(x - 38, y - 40), (x + 38, y - 40), (x + 31, y + 12), (x - 31, y + 12)], BLACK)
+        self.polygon([(x - 38, y - 40), (x + 38, y - 40), (x + 47, y + 65), (x - 47, y + 65)], "#F2F2F2", BLACK, 3)
+        self.polygon([(x - 38, y - 40), (x + 38, y - 40), (x + 31, y + 12), (x - 31, y + 12)], BLACK)
         self.line([(x - 35, y - 25), (x - 84, y + 18)], SKIN, 18)
         self.line([(x + 35, y - 25), (x + 84, y + 18)], SKIN, 18)
         self.oval((x - 96, y + 9, x - 73, y + 31), SKIN, BLACK, 2)
         self.oval((x + 73, y + 9, x + 96, y + 31), SKIN, BLACK, 2)
         self.oval((x - 34, y - 112, x + 34, y - 43), SKIN, BLACK, 3)
-        self.shape(
-            "create_polygon",
+        self.polygon(
             [
                 (x - 36, y - 86),
                 (x - 40, y - 115),
@@ -163,8 +169,7 @@ class Ben10Pet:
 
     def flame(self, x, y, s):
         sway = math.sin(self.frame * 0.35 + x) * 5
-        self.shape(
-            "create_polygon",
+        self.polygon(
             [
                 (x, y + s),
                 (x - s * 0.55, y + s * 0.2),
@@ -177,8 +182,7 @@ class Ben10Pet:
             YELLOW,
             2,
         )
-        self.shape(
-            "create_polygon",
+        self.polygon(
             [
                 (x, y + s * 0.5),
                 (x - s * 0.22, y - s * 0.1),
@@ -193,8 +197,7 @@ class Ben10Pet:
         pulse = 4 + math.sin(self.frame * 0.25) * 4
         for r in (90 + pulse, 96 + pulse, 102 + pulse):
             self.oval((x - r, y + 15 - r, x + r, y + 15 + r), "", FIRE, 2)
-        self.shape(
-            "create_polygon",
+        self.polygon(
             [
                 (x - 38, y - 70),
                 (x - 63, y - 119),
@@ -209,10 +212,10 @@ class Ben10Pet:
             3,
         )
         self.oval((x - 36, y - 92, x + 36, y - 26), RED, BLACK, 3)
-        self.shape("create_polygon", [(x - 24, y - 72), (x + 24, y - 72), (x + 15, y - 40), (x - 15, y - 40)], "#4C1C10", YELLOW, 2)
-        self.shape("create_polygon", [(x - 20, y - 67), (x - 3, y - 59), (x - 20, y - 52)], YELLOW, BLACK)
-        self.shape("create_polygon", [(x + 20, y - 67), (x + 3, y - 59), (x + 20, y - 52)], YELLOW, BLACK)
-        self.shape("create_polygon", [(x - 35, y - 35), (x + 35, y - 35), (x + 44, y + 76), (x - 44, y + 76)], RED, YELLOW, 3)
+        self.polygon([(x - 24, y - 72), (x + 24, y - 72), (x + 15, y - 40), (x - 15, y - 40)], "#4C1C10", YELLOW, 2)
+        self.polygon([(x - 20, y - 67), (x - 3, y - 59), (x - 20, y - 52)], YELLOW, BLACK)
+        self.polygon([(x + 20, y - 67), (x + 3, y - 59), (x + 20, y - 52)], YELLOW, BLACK)
+        self.polygon([(x - 35, y - 35), (x + 35, y - 35), (x + 44, y + 76), (x - 44, y + 76)], RED, YELLOW, 3)
         self.line([(x - 30, y - 20), (x - 90, y + 28)], RED, 23)
         self.line([(x + 30, y - 20), (x + 90, y + 28)], RED, 23)
         self.flame(x - 98, y + 32, 28)
@@ -222,7 +225,7 @@ class Ben10Pet:
         self.flame(x - 39, y + 164, 23)
         self.flame(x + 43, y + 164, 23)
         self.oval((x - 15, y - 4, x + 15, y + 26), "#3B1B12", YELLOW, 2)
-        self.shape("create_polygon", [(x, y + 1), (x + 8, y + 11), (x, y + 21), (x - 8, y + 11)], GREEN, BLACK)
+        self.polygon([(x, y + 1), (x + 8, y + 11), (x, y + 21), (x - 8, y + 11)], GREEN, BLACK)
 
     def spawn_particles(self, fire=False, count=5):
         palette = [FIRE, "#FFB000", YELLOW, "#FFFFFF"] if fire else [GREEN, "#EFFFF0", "#D7FF75", "#FFFFFF"]
