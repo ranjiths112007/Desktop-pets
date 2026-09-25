@@ -2,12 +2,13 @@
 
 Features:
 - Borderless, always-on-top, transparent desktop pet window.
+- Custom user image assets for Ben 10, Heatblast, and Green Energy Portal Ring.
 - State-machine driven animation: Ben 10 & Heatblast forms.
 - Natural desktop movement, edge detection, direction flipping, idle bobbing, and hopping.
-- Layered Omnitrix activation & energy particle transformation timeline.
+- Layered Omnitrix activation & energy portal transformation timeline.
 - High-performance particle engine (green energy sparks, flame embers, radial beams, rings).
 - Mouse dragging, double-click transform, spacebar control, and right-click context menu.
-- Image preprocessing with automatic white background removal and vector fallbacks.
+- Preprocessed transparent PNG images with high quality fallback support.
 """
 
 from __future__ import annotations
@@ -31,7 +32,7 @@ BASE_DIR = Path(__file__).resolve().parent
 ASSETS_DIR = BASE_DIR / "assets"
 BEN_IMAGE_PATH = ASSETS_DIR / "ben10.png"
 HEATBLAST_IMAGE_PATH = ASSETS_DIR / "heatblast.png"
-WALLPAPER_IMAGE_PATH = BASE_DIR / "ben10-wallpaper-13.jpg"
+ENERGY_RING_PATH = ASSETS_DIR / "energy_ring.png"
 
 # Constants & Settings
 WINDOW_W = 280
@@ -142,9 +143,9 @@ class Ben10PetEngine:
         self.particles: List[Particle] = []
 
         # Asset loading
-        self.ensure_assets()
-        self.ben_img_right, self.ben_img_left = self.load_character_images(BEN_IMAGE_PATH, crop_right=True)
+        self.ben_img_right, self.ben_img_left = self.load_character_images(BEN_IMAGE_PATH)
         self.heat_img_right, self.heat_img_left = self.load_character_images(HEATBLAST_IMAGE_PATH)
+        self.ring_photos = self.load_ring_frames(ENERGY_RING_PATH)
 
         # Bindings
         self.canvas.bind("<ButtonPress-1>", self.start_drag)
@@ -170,67 +171,41 @@ class Ben10PetEngine:
         # Start animation tick loop (~30 FPS)
         self.tick()
 
-    def ensure_assets(self):
-        """Auto-extract clean transparent PNGs from provided wallpaper if missing."""
-        if not HAS_PIL:
-            return
-
-        ASSETS_DIR.mkdir(parents=True, exist_ok=True)
-        if not BEN_IMAGE_PATH.exists() or not HEATBLAST_IMAGE_PATH.exists():
-            if WALLPAPER_IMAGE_PATH.exists():
-                try:
-                    wall = Image.open(WALLPAPER_IMAGE_PATH).convert("RGBA")
-                    w, h = wall.size
-                    ben_crop = wall.crop((0, 0, int(w * 0.48), h))
-                    heat_crop = wall.crop((int(w * 0.48), 0, w, h))
-
-                    def clean_bg(im: Image.Image) -> Image.Image:
-                        arr = im.load()
-                        for y in range(im.height):
-                            for x in range(im.width):
-                                r, g, b, a = arr[x, y]
-                                if r > 225 and g > 225 and b > 225:
-                                    arr[x, y] = (255, 255, 255, 0)
-                        bbox = im.getbbox()
-                        return im.crop(bbox) if bbox else im
-
-                    if not BEN_IMAGE_PATH.exists():
-                        clean_bg(ben_crop).save(BEN_IMAGE_PATH)
-                    if not HEATBLAST_IMAGE_PATH.exists():
-                        clean_bg(heat_crop).save(HEATBLAST_IMAGE_PATH)
-                except Exception as exc:
-                    print(f"Asset extraction info: {exc}")
-
     def load_character_images(
-        self, path: Path, crop_right: bool = False
+        self, path: Path
     ) -> Tuple[Optional[ImageTk.PhotoImage], Optional[ImageTk.PhotoImage]]:
-        """Load character image, remove white background, and pre-cache left/right facing photos."""
+        """Load character image and pre-cache left/right facing photos."""
         if not HAS_PIL or not path.exists():
             return None, None
         try:
             image = Image.open(path).convert("RGBA")
-            if crop_right and image.width > image.height * 1.2:
-                image = image.crop((image.width // 2, 0, image.width, image.height))
-
-            # Background removal
-            pixels = image.load()
-            for y in range(image.height):
-                for x in range(image.width):
-                    r, g, b, a = pixels[x, y]
-                    if r > 225 and g > 225 and b > 225:
-                        pixels[x, y] = (255, 255, 255, 0)
 
             # Resize maintaining aspect ratio
-            max_size = (200, 250)
+            max_size = (210, 260)
             image.thumbnail(max_size, Image.Resampling.LANCZOS)
 
-            # Cache right and left facing images
             img_right = ImageTk.PhotoImage(image)
             img_left = ImageTk.PhotoImage(image.transpose(Image.FLIP_LEFT_RIGHT))
             return img_right, img_left
         except Exception as exc:
             print(f"Could not load image {path.name}: {exc}")
             return None, None
+
+    def load_ring_frames(self, path: Path) -> List[ImageTk.PhotoImage]:
+        """Pre-cache scaled and rotated energy ring frames for portal animation."""
+        if not HAS_PIL or not path.exists():
+            return []
+        try:
+            base_ring = Image.open(path).convert("RGBA")
+            base_ring = base_ring.resize((220, 220), Image.Resampling.LANCZOS)
+            frames = []
+            for angle in range(0, 360, 45):
+                rotated = base_ring.rotate(angle, resample=Image.Resampling.BICUBIC)
+                frames.append(ImageTk.PhotoImage(rotated))
+            return frames
+        except Exception as exc:
+            print(f"Could not load energy ring: {exc}")
+            return []
 
     # Dragging & Context Menu
     def start_drag(self, event):
@@ -352,6 +327,12 @@ class Ben10PetEngine:
         else:
             fallback_func(cx, cy + y_offset)
 
+    def draw_energy_ring_overlay(self, cx: int, cy: int):
+        """Draw animated rotating energy portal ring asset if available."""
+        if self.ring_photos:
+            frame_idx = (self.state_frame // 2) % len(self.ring_photos)
+            self.canvas.create_image(cx, cy, image=self.ring_photos[frame_idx])
+
     def draw_omnitrix_wrist(self, x: int, y: int, glow: bool = False):
         color = OMNITRIX_GREEN if glow else "#252525"
         ring_color = WHITE_HIGHLIGHT if glow else OMNITRIX_GREEN
@@ -363,18 +344,13 @@ class Ben10PetEngine:
 
     # Vector Art Fallbacks
     def draw_vector_ben(self, cx: int, cy: int):
-        # Head & Hair
         self.canvas.create_oval(cx - 26, cy - 85, cx + 26, cy - 35, fill="#e8aa78", outline="#222222", width=2)
         self.canvas.create_arc(cx - 28, cy - 92, cx + 28, cy - 36, start=0, extent=180, fill="#5b2d13", outline="#5b2d13")
-        # Shirt (Black & White Ben 10 classic shirt)
         self.canvas.create_rectangle(cx - 30, cy - 35, cx + 30, cy + 35, fill="#ffffff", outline="#222222", width=2)
         self.canvas.create_rectangle(cx - 10, cy - 35, cx + 10, cy + 35, fill="#252525", outline="#252525")
-        # Arms
         self.canvas.create_line(cx - 28, cy - 20, cx - 60, cy + 15, fill="#e8aa78", width=13)
         self.canvas.create_line(cx + 28, cy - 20, cx + 60, cy + 15, fill="#e8aa78", width=13)
-        # Omnitrix on left wrist
         self.draw_omnitrix_wrist(cx - 58, cy + 12)
-        # Pants & Shoes
         self.canvas.create_line(cx - 14, cy + 35, cx - 22, cy + 95, fill="#252525", width=15)
         self.canvas.create_line(cx + 14, cy + 35, cx + 22, cy + 95, fill="#252525", width=15)
         self.canvas.create_line(cx - 32, cy + 96, cx - 10, cy + 96, fill="#eeeeee", width=8)
@@ -382,18 +358,14 @@ class Ben10PetEngine:
 
     def draw_vector_heatblast(self, cx: int, cy: int):
         pulse = int(4 * math.sin(self.frame * 0.2))
-        # Body fire aura
         self.canvas.create_oval(cx - 60 - pulse, cy - 110 - pulse, cx + 60 + pulse, cy + 110 + pulse, fill="", outline=HEATBLAST_ORANGE, width=3)
-        # Head flames
         self.canvas.create_polygon(
             cx - 35, cy - 40, cx - 55, cy - 105, cx - 18, cy - 75,
             cx, cy - 135, cx + 18, cy - 75, cx + 55, cy - 105, cx + 35, cy - 40,
             fill=HEATBLAST_ORANGE, outline=HEATBLAST_YELLOW, width=2
         )
-        # Face & Chest (Magma Rock Pattern)
         self.canvas.create_oval(cx - 28, cy - 70, cx + 28, cy - 15, fill=HEATBLAST_YELLOW, outline="#8c1c00", width=2)
         self.canvas.create_rectangle(cx - 32, cy - 15, cx + 32, cy + 65, fill=HEATBLAST_RED, outline=HEATBLAST_YELLOW, width=2)
-        # Arms & Legs
         self.canvas.create_line(cx - 32, cy - 5, cx - 70, cy + 40, fill=HEATBLAST_YELLOW, width=16)
         self.canvas.create_line(cx + 32, cy - 5, cx + 70, cy + 40, fill=HEATBLAST_YELLOW, width=16)
         self.canvas.create_line(cx - 16, cy + 65, cx - 28, cy + 125, fill=HEATBLAST_RED, width=17)
@@ -444,10 +416,12 @@ class Ben10PetEngine:
 
         elif self.state == PetState.ACTIVATE_OMNITRIX:
             self.state_frame += 1
+            cx, cy = WINDOW_W // 2, 170
             photo = self.get_current_image(self.ben_img_right, self.ben_img_left)
             self.draw_character(photo, self.draw_vector_ben)
+            self.draw_energy_ring_overlay(cx, cy)
             if photo is None:
-                self.draw_omnitrix_wrist(WINDOW_W // 2 - 58, 182, glow=True)
+                self.draw_omnitrix_wrist(cx - 58, 182, glow=True)
 
             if self.state_frame % 4 == 0:
                 self.spawn_transformation_ring(radius_start=15.0 + self.state_frame * 3)
@@ -459,6 +433,9 @@ class Ben10PetEngine:
         elif self.state == PetState.TRANSFORMING_TO_HEATBLAST:
             self.state_frame += 1
             cx, cy = WINDOW_W // 2, 170
+
+            # Draw rotating green energy ring portal
+            self.draw_energy_ring_overlay(cx, cy)
 
             # Radial light beams
             for i in range(8):
@@ -496,6 +473,8 @@ class Ben10PetEngine:
         elif self.state == PetState.TRANSFORMING_TO_BEN:
             self.state_frame += 1
             cx, cy = WINDOW_W // 2, 170
+
+            self.draw_energy_ring_overlay(cx, cy)
 
             # Contracting fire ring
             r_contract = max(10, 120 - self.state_frame * 5)
