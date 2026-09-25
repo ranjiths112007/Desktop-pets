@@ -1,14 +1,12 @@
-"""Ben 10 Desktop Pet — Sketched Vector & Image Master Build Engine.
+"""Ben 10 Desktop Pet — Pure Procedural Vector Engine.
 
 Features:
-- Hand-crafted, highly detailed sketched vector artwork matching Ben 10 & Heatblast reference art.
-- Interactive mode toggle between Sketched Vector Art Mode and User Image Asset Mode.
-- Borderless, always-on-top, transparent desktop pet window.
-- State-machine driven animation: Ben 10 & Heatblast forms.
-- Natural desktop movement, edge detection, direction flipping, idle bobbing, and hopping.
-- Layered Omnitrix activation & energy portal transformation timeline.
-- High-performance particle engine (green energy sparks, flame embers, radial beams, rings).
-- Mouse dragging, double-click transform, spacebar control, and right-click context menu.
+- Pure Tkinter procedural vector art rendering (crisp, scalable, no image dependencies).
+- Classic Ben 10 character with glowing Omnitrix wrist watch.
+- Heatblast form with magma armor, head flames, chest Omnitrix badge, and flame particles.
+- Eased multi-ring energy transformation sequence with radial energy beams.
+- Borderless transparent floating desktop window with mouse dragging.
+- Space / Double-Click to transform, P to pause walking, Right-Click / Escape to exit.
 """
 
 from __future__ import annotations
@@ -17,587 +15,308 @@ import math
 import random
 import sys
 import tkinter as tk
-from enum import Enum, auto
-from pathlib import Path
-from typing import List, Optional, Tuple
+from dataclasses import dataclass
 
-try:
-    from PIL import Image, ImageEnhance, ImageTk
-    HAS_PIL = True
-except ImportError:
-    HAS_PIL = False
-
-# Paths & Directories
-BASE_DIR = Path(__file__).resolve().parent
-ASSETS_DIR = BASE_DIR / "assets"
-BEN_IMAGE_PATH = ASSETS_DIR / "ben10.png"
-HEATBLAST_IMAGE_PATH = ASSETS_DIR / "heatblast.png"
-ENERGY_RING_PATH = ASSETS_DIR / "energy_ring.png"
-
-# Constants & Colors
-WINDOW_W = 280
-WINDOW_H = 340
-TRANSPARENT_COLOR = "#010101"
-OMNITRIX_GREEN = "#b7ff00"
-LIGHT_GREEN = "#00ff66"
-DARK_GREEN = "#3a7d00"
-HEATBLAST_ORANGE = "#ff6a00"
-HEATBLAST_RED = "#d93600"
-HEATBLAST_DARK = "#4a1204"
-HEATBLAST_YELLOW = "#ffdf38"
-WHITE_HIGHLIGHT = "#ffffff"
-SKIN_TONE = "#f5c29b"
-SKIN_SHADOW = "#e8aa78"
-HAIR_BROWN = "#4a2511"
-HAIR_DARK = "#2b1408"
+W, H, FPS = 330, 390, 33
+BG = "#010101"
+GREEN = "#B7FF00"
+BLACK = "#151515"
+SKIN = "#F1B27E"
+HAIR = "#5C2F16"
+FIRE = "#FF7A00"
+YELLOW = "#FFF36A"
+RED = "#7D220E"
 
 
-class PetState(Enum):
-    IDLE_BEN = auto()
-    WALK_BEN = auto()
-    ACTIVATE_OMNITRIX = auto()
-    TRANSFORMING_TO_HEATBLAST = auto()
-    IDLE_HEATBLAST = auto()
-    WALK_HEATBLAST = auto()
-    TRANSFORMING_TO_BEN = auto()
-    PAUSED = auto()
-
-
-class RenderMode(Enum):
-    SKETCHED_VECTOR = auto()
-    USER_IMAGE = auto()
-
-
+@dataclass
 class Particle:
-    """Particle effect representation for energy rings, sparks, and embers."""
-
-    def __init__(
-        self,
-        x: float,
-        y: float,
-        vx: float,
-        vy: float,
-        color: str,
-        radius: float,
-        life: int,
-        p_type: str = "spark",
-    ):
-        self.x = x
-        self.y = y
-        self.vx = vx
-        self.vy = vy
-        self.color = color
-        self.radius = radius
-        self.life = life
-        self.max_life = life
-        self.p_type = p_type
-
-    def update(self) -> bool:
-        self.x += self.vx
-        self.y += self.vy
-        self.life -= 1
-        if self.p_type == "ember":
-            self.radius = max(0.5, self.radius * 0.96)
-            self.vy -= 0.05  # Buoyancy for embers
-        elif self.p_type == "spark":
-            self.vx *= 0.95
-            self.vy *= 0.95
-        elif self.p_type == "ring":
-            self.radius += 3.5
-        return self.life > 0
+    x: float
+    y: float
+    vx: float
+    vy: float
+    life: int
+    size: float
+    color: str
 
 
-class Ben10PetEngine:
-    """Main Application Engine for the Ben 10 Desktop Pet."""
-
+class Ben10Pet:
     def __init__(self, root: tk.Tk):
         self.root = root
-        self.root.title("Ben 10 Desktop Pet")
-
-        self.root.configure(bg=TRANSPARENT_COLOR)
+        root.title("Ben 10 Desktop Pet")
+        root.overrideredirect(True)
+        root.attributes("-topmost", True)
+        root.configure(bg=BG)
         try:
-            self.root.attributes("-transparentcolor", TRANSPARENT_COLOR)
+            root.attributes("-transparentcolor", BG)
         except tk.TclError:
             pass
 
-        self.root.overrideredirect(True)
-        self.root.attributes("-topmost", True)
-
-        self.canvas = tk.Canvas(
-            root,
-            width=WINDOW_W,
-            height=WINDOW_H,
-            bg=TRANSPARENT_COLOR,
-            highlightthickness=0,
-        )
-        self.canvas.pack(fill="both", expand=True)
+        self.c = tk.Canvas(root, width=W, height=H, bg=BG, highlightthickness=0)
+        self.c.pack(fill="both", expand=True)
 
         self.root.update_idletasks()
-        self.screen_w = self.root.winfo_screenwidth()
-        self.screen_h = self.root.winfo_screenheight()
+        self.sw = root.winfo_screenwidth()
+        self.sh = root.winfo_screenheight()
 
-        self.pos_x = max(50, (self.screen_w - WINDOW_W) // 2)
-        self.pos_y = max(50, (self.screen_h - WINDOW_H) // 2)
-        self.velocity_x = 3.0
-        self.direction = 1  # 1 = right, -1 = left
-
-        # Rendering & State management
-        self.render_mode = RenderMode.SKETCHED_VECTOR
-        self.state = PetState.IDLE_BEN
-        self.prev_state = PetState.IDLE_BEN
+        self.x = max(20, (self.sw - W) // 2)
+        self.y = max(20, (self.sh - H) // 2)
+        self.dx = 1.2
         self.frame = 0
-        self.state_frame = 0
-        self.state_timer = random.randint(120, 240)
-        self.hop_frame = 0
-        self.is_hopping = False
-        self.drag_offset: Optional[Tuple[int, int]] = None
-        self.high_quality_particles = True
+        self.state = "ben"
+        self.tframe = 0
+        self.paused = False
+        self.drag = None
+        self.particles_list = []
 
-        self.particles: List[Particle] = []
+        self.c.bind("<ButtonPress-1>", self.start_drag)
+        self.c.bind("<B1-Motion>", self.drag_window)
+        self.c.bind("<ButtonRelease-1>", lambda e: setattr(self, "drag", None))
+        self.c.bind("<Double-Button-1>", lambda e: self.toggle())
+        self.c.bind("<Button-3>", lambda e: root.destroy())
+        root.bind("<space>", lambda e: self.toggle())
+        root.bind("<p>", lambda e: self.pause())
+        root.bind("<Escape>", lambda e: root.destroy())
 
-        # Asset loading
-        self.ben_img_right, self.ben_img_left = self.load_character_images(BEN_IMAGE_PATH)
-        self.heat_img_right, self.heat_img_left = self.load_character_images(HEATBLAST_IMAGE_PATH)
-        self.ring_photos = self.load_ring_frames(ENERGY_RING_PATH)
-
-        # Bindings
-        self.canvas.bind("<ButtonPress-1>", self.start_drag)
-        self.canvas.bind("<B1-Motion>", self.drag_window)
-        self.canvas.bind("<ButtonRelease-1>", self.stop_drag)
-        self.canvas.bind("<Double-Button-1>", lambda _e: self.trigger_transformation())
-        self.canvas.bind("<Button-3>", self.show_context_menu)
-        self.root.bind("<space>", lambda _e: self.trigger_transformation())
-        self.root.bind("<Escape>", lambda _e: self.root.destroy())
-
-        # Setup context menu
-        self.context_menu = tk.Menu(self.root, tearoff=0, bg="#1a1a1a", fg=OMNITRIX_GREEN, activebackground=DARK_GREEN)
-        self.context_menu.add_command(label="⚡ Transform / Switch Form (Space)", command=self.trigger_transformation)
-        self.context_menu.add_command(label="🎨 Toggle Art Style (Sketched / Photo)", command=self.toggle_render_mode)
-        self.context_menu.add_command(label="🦘 Hop / Jump", command=self.trigger_hop)
-        self.context_menu.add_command(label="⏸️ Pause / Resume Walking", command=self.toggle_pause)
-        self.context_menu.add_command(label="✨ Toggle Particle Quality", command=self.toggle_quality)
-        self.context_menu.add_separator()
-        self.context_menu.add_command(label="❌ Exit Desktop Pet (Esc)", command=self.root.destroy)
-
-        self.root.geometry(f"{WINDOW_W}x{WINDOW_H}+{int(self.pos_x)}+{int(self.pos_y)}")
+        self.root.geometry(f"{W}x{H}+{int(self.x)}+{int(self.y)}")
         self.root.deiconify()
         self.root.lift()
         self.root.focus_force()
 
         self.tick()
 
-    def load_character_images(
-        self, path: Path
-    ) -> Tuple[Optional[ImageTk.PhotoImage], Optional[ImageTk.PhotoImage]]:
-        if not HAS_PIL or not path.exists():
-            return None, None
-        try:
-            image = Image.open(path).convert("RGBA")
-            max_size = (210, 260)
-            image.thumbnail(max_size, Image.Resampling.LANCZOS)
-            img_right = ImageTk.PhotoImage(image)
-            img_left = ImageTk.PhotoImage(image.transpose(Image.FLIP_LEFT_RIGHT))
-            return img_right, img_left
-        except Exception as exc:
-            print(f"Could not load image {path.name}: {exc}")
-            return None, None
+    def pause(self):
+        self.paused = not self.paused
 
-    def load_ring_frames(self, path: Path) -> List[ImageTk.PhotoImage]:
-        if not HAS_PIL or not path.exists():
-            return []
-        try:
-            base_ring = Image.open(path).convert("RGBA")
-            base_ring = base_ring.resize((220, 220), Image.Resampling.LANCZOS)
-            frames = []
-            for angle in range(0, 360, 45):
-                rotated = base_ring.rotate(angle, resample=Image.Resampling.BICUBIC)
-                frames.append(ImageTk.PhotoImage(rotated))
-            return frames
-        except Exception as exc:
-            print(f"Could not load energy ring: {exc}")
-            return []
+    def start_drag(self, e):
+        self.drag = (e.x_root - self.x, e.y_root - self.y)
 
-    # Dragging & Controls
-    def start_drag(self, event):
-        self.drag_offset = (event.x_root - self.pos_x, event.y_root - self.pos_y)
+    def drag_window(self, e):
+        if self.drag:
+            self.x = max(0, e.x_root - self.drag[0])
+            self.y = max(0, e.y_root - self.drag[1])
+            self.root.geometry(f"+{int(self.x)}+{int(self.y)}")
 
-    def drag_window(self, event):
-        if self.drag_offset:
-            self.pos_x = event.x_root - self.drag_offset[0]
-            self.pos_y = event.y_root - self.drag_offset[1]
-            self.root.geometry(f"+{int(self.pos_x)}+{int(self.pos_y)}")
-
-    def stop_drag(self, _event):
-        self.drag_offset = None
-
-    def show_context_menu(self, event):
-        self.context_menu.tk_popup(event.x_root, event.y_root)
-
-    def toggle_render_mode(self):
-        if self.render_mode == RenderMode.SKETCHED_VECTOR:
-            self.render_mode = RenderMode.USER_IMAGE
-        else:
-            self.render_mode = RenderMode.SKETCHED_VECTOR
-
-    def trigger_transformation(self):
-        if self.state in (PetState.ACTIVATE_OMNITRIX, PetState.TRANSFORMING_TO_HEATBLAST, PetState.TRANSFORMING_TO_BEN):
+    def toggle(self):
+        if self.state in ("transforming", "returning"):
             return
+        self.state = "transforming" if self.state == "ben" else "returning"
+        self.tframe = 0
+        self.particles_list = []
 
-        if self.state in (PetState.IDLE_BEN, PetState.WALK_BEN, PetState.PAUSED) and self.prev_state != PetState.IDLE_HEATBLAST:
-            self.state = PetState.ACTIVATE_OMNITRIX
-            self.state_frame = 0
-            self.spawn_omnitrix_burst()
-        elif self.state in (PetState.IDLE_HEATBLAST, PetState.WALK_HEATBLAST) or (self.state == PetState.PAUSED and self.prev_state in (PetState.IDLE_HEATBLAST, PetState.WALK_HEATBLAST)):
-            self.state = PetState.TRANSFORMING_TO_BEN
-            self.state_frame = 0
-            self.spawn_heatblast_reverse_burst()
+    def shape(self, kind, pts, fill, outline="", width=1):
+        vals = [v for p in pts for v in p]
+        getattr(self.c, kind)(*vals, fill=fill, outline=outline, width=width)
 
-    def trigger_hop(self):
-        if not self.is_hopping:
-            self.is_hopping = True
-            self.hop_frame = 0
+    def oval(self, box, fill="", outline="", width=1):
+        self.c.create_oval(*box, fill=fill, outline=outline, width=width)
 
-    def toggle_pause(self):
-        if self.state == PetState.PAUSED:
-            self.state = self.prev_state if self.prev_state != PetState.PAUSED else PetState.IDLE_BEN
-        else:
-            self.prev_state = self.state
-            self.state = PetState.PAUSED
+    def line(self, pts, fill, width):
+        self.shape("create_line", pts, fill, width=width)
 
-    def toggle_quality(self):
-        self.high_quality_particles = not self.high_quality_particles
+    def omnitrix(self, x, y, active=False):
+        if active:
+            for r in (25, 31, 37):
+                self.oval((x - r, y - r, x + r, y + r), "", GREEN, 2)
+        self.oval((x - 18, y - 12, x + 18, y + 12), "#3C3C3C", BLACK, 2)
+        self.oval((x - 10, y - 10, x + 10, y + 10), "#BDBDBD", BLACK, 2)
+        self.oval((x - 8, y - 8, x + 8, y + 8), GREEN if active else "#4E7B22", BLACK, 2)
+        self.shape("create_polygon", [(x, y - 6), (x + 6, y), (x, y + 6), (x - 6, y)], "#F2FFF0", BLACK)
 
-    # Particle Engine
-    def spawn_omnitrix_burst(self):
-        cx, cy = WINDOW_W // 2, 170
-        count = 35 if self.high_quality_particles else 18
-        for _ in range(count):
-            angle = random.uniform(0, 2 * math.pi)
-            speed = random.uniform(2.0, 7.0)
-            vx = math.cos(angle) * speed
-            vy = math.sin(angle) * speed
-            color = random.choice([OMNITRIX_GREEN, LIGHT_GREEN, WHITE_HIGHLIGHT, "#eaffb0"])
-            self.particles.append(Particle(cx, cy, vx, vy, color, random.uniform(3, 6), random.randint(15, 30), "spark"))
+    def ben(self, bob=0):
+        x, y = 165, 170 + bob
+        self.oval((x - 62, 342, x + 62, 356), "#161616")
+        self.line([(x - 18, y + 92), (x - 36, y + 166)], "#252525", 23)
+        self.line([(x + 18, y + 92), (x + 38, y + 166)], "#252525", 23)
+        self.line([(x - 42, y + 166), (x - 18, y + 166)], "#FFFFFF", 11)
+        self.line([(x + 18, y + 166), (x + 46, y + 166)], "#FFFFFF", 11)
+        self.shape("create_polygon", [(x - 38, y - 40), (x + 38, y - 40), (x + 47, y + 65), (x - 47, y + 65)], "#F2F2F2", BLACK, 3)
+        self.shape("create_polygon", [(x - 38, y - 40), (x + 38, y - 40), (x + 31, y + 12), (x - 31, y + 12)], BLACK)
+        self.line([(x - 35, y - 25), (x - 84, y + 18)], SKIN, 18)
+        self.line([(x + 35, y - 25), (x + 84, y + 18)], SKIN, 18)
+        self.oval((x - 96, y + 9, x - 73, y + 31), SKIN, BLACK, 2)
+        self.oval((x + 73, y + 9, x + 96, y + 31), SKIN, BLACK, 2)
+        self.oval((x - 34, y - 112, x + 34, y - 43), SKIN, BLACK, 3)
+        self.shape(
+            "create_polygon",
+            [
+                (x - 36, y - 86),
+                (x - 40, y - 115),
+                (x - 18, y - 130),
+                (x - 2, y - 118),
+                (x + 14, y - 131),
+                (x + 39, y - 111),
+                (x + 35, y - 81),
+                (x + 13, y - 95),
+                (x - 5, y - 82),
+                (x - 18, y - 98),
+            ],
+            HAIR,
+            BLACK,
+            2,
+        )
+        self.oval((x - 21, y - 85, x - 10, y - 73), "#A6D62A", BLACK, 2)
+        self.oval((x + 10, y - 85, x + 21, y - 73), "#A6D62A", BLACK, 2)
+        self.oval((x - 17, y - 82, x - 13, y - 77), BLACK)
+        self.oval((x + 13, y - 82, x + 17, y - 77), BLACK)
+        self.line([(x - 13, y - 62), (x, y - 57), (x + 13, y - 62)], BLACK, 2)
+        self.omnitrix(x - 76, y + 17, active=(self.state in ("transforming", "returning")))
 
-    def spawn_transformation_ring(self, radius_start: float = 10.0):
-        cx, cy = WINDOW_W // 2, 170
-        self.particles.append(Particle(cx, cy, 0, 0, OMNITRIX_GREEN, radius_start, 18, "ring"))
-
-    def spawn_heatblast_embers(self):
-        cx = WINDOW_W // 2 + random.randint(-45, 45)
-        cy = 230 + random.randint(-20, 20)
-        vx = random.uniform(-1.0, 1.0)
-        vy = random.uniform(-4.0, -1.5)
-        color = random.choice([HEATBLAST_ORANGE, HEATBLAST_RED, HEATBLAST_YELLOW, "#ffffff"])
-        self.particles.append(Particle(cx, cy, vx, vy, color, random.uniform(3, 7), random.randint(20, 45), "ember"))
-
-    def spawn_heatblast_reverse_burst(self):
-        cx, cy = WINDOW_W // 2, 170
-        count = 40 if self.high_quality_particles else 20
-        for _ in range(count):
-            angle = random.uniform(0, 2 * math.pi)
-            speed = random.uniform(3.0, 8.0)
-            vx = math.cos(angle) * speed
-            vy = math.sin(angle) * speed
-            color = random.choice([HEATBLAST_ORANGE, OMNITRIX_GREEN, HEATBLAST_YELLOW, WHITE_HIGHLIGHT])
-            self.particles.append(Particle(cx, cy, vx, vy, color, random.uniform(4, 7), random.randint(15, 30), "spark"))
-
-    def update_particles(self):
-        self.particles = [p for p in self.particles if p.update()]
-        for p in self.particles:
-            if p.p_type == "ring":
-                self.canvas.create_oval(
-                    p.x - p.radius, p.y - p.radius,
-                    p.x + p.radius, p.y + p.radius,
-                    outline=p.color, width=4
-                )
-            else:
-                self.canvas.create_oval(
-                    p.x - p.radius, p.y - p.radius,
-                    p.x + p.radius, p.y + p.radius,
-                    fill=p.color, outline=""
-                )
-
-    # High Quality Sketched Vector Artwork
-    def draw_sketched_ben(self, cx: int, cy: int):
-        """Draw high quality hand-crafted sketched Ben 10 character art matching reference image."""
-        # Ambient Green Energy Aura Arcs (from reference art)
-        aura_pulse = int(5 * math.sin(self.frame * 0.2))
-        self.canvas.create_oval(cx - 75 - aura_pulse, cy - 110 - aura_pulse, cx + 75 + aura_pulse, cy + 110 + aura_pulse, outline=DARK_GREEN, width=2)
-        self.canvas.create_oval(cx - 60 - aura_pulse, cy - 95 - aura_pulse, cx + 60 + aura_pulse, cy + 95 + aura_pulse, outline=OMNITRIX_GREEN, width=1)
-
-        # Hair Shadow & Main Hair (Spiky Brown Tufts)
-        hair_pts = [
-            (cx - 38, cy - 50), (cx - 45, cy - 75), (cx - 28, cy - 98),
-            (cx - 10, cy - 105), (cx + 12, cy - 102), (cx + 35, cy - 90),
-            (cx + 46, cy - 68), (cx + 38, cy - 45), (cx + 25, cy - 65),
-            (cx, cy - 72), (cx - 22, cy - 68)
-        ]
-        self.canvas.create_polygon(hair_pts, fill=HAIR_BROWN, outline=HAIR_DARK, width=2)
-
-        # Hair Highlights
-        self.canvas.create_polygon([(cx - 20, cy - 95), (cx - 5, cy - 100), (cx + 10, cy - 92)], fill="#6e381a")
-
-        # Head & Neck
-        self.canvas.create_oval(cx - 30, cy - 65, cx + 30, cy - 10, fill=SKIN_TONE, outline="#2b1408", width=2)
-        self.canvas.create_polygon([(cx - 12, cy - 15), (cx + 12, cy - 15), (cx + 14, cy + 5), (cx - 14, cy + 5)], fill=SKIN_SHADOW)
-
-        # Eyes (Glowing Green Omnitrix Eyes matching reference art)
-        # Left Eye
-        self.canvas.create_polygon([(cx - 20, cy - 45), (cx - 8, cy - 47), (cx - 6, cy - 36), (cx - 18, cy - 36)], fill="#ffffff", outline="#111111", width=2)
-        self.canvas.create_oval(cx - 16, cy - 45, cx - 8, cy - 37, fill=LIGHT_GREEN, outline=OMNITRIX_GREEN)
-        self.canvas.create_oval(cx - 13, cy - 43, cx - 10, cy - 40, fill="#ffffff")
-        # Right Eye
-        self.canvas.create_polygon([(cx + 8, cy - 47), (cx + 20, cy - 45), (cx + 18, cy - 36), (cx + 6, cy - 36)], fill="#ffffff", outline="#111111", width=2)
-        self.canvas.create_oval(cx + 8, cy - 45, cx + 16, cy - 37, fill=LIGHT_GREEN, outline=OMNITRIX_GREEN)
-        self.canvas.create_oval(cx + 11, cy - 43, cx + 14, cy - 40, fill="#ffffff")
-
-        # Eyebrows & Smile
-        self.canvas.create_line(cx - 22, cy - 50, cx - 6, cy - 48, fill=HAIR_DARK, width=3)
-        self.canvas.create_line(cx + 6, cy - 48, cx + 22, cy - 50, fill=HAIR_DARK, width=3)
-        self.canvas.create_arc(cx - 10, cy - 30, cx + 10, cy - 18, start=200, extent=140, style="arc", outline="#2b1408", width=2)
-
-        # Torso — Classic White & Black T-Shirt
-        self.canvas.create_polygon([(cx - 32, cy), (cx + 32, cy), (cx + 36, cy + 70), (cx - 36, cy + 70)], fill="#ffffff", outline="#1a1a1a", width=3)
-        # Iconic Vertical Black Stripe down center
-        self.canvas.create_rectangle(cx - 11, cy, cx + 11, cy + 70, fill="#1a1a1a", outline="#1a1a1a")
-        # Black Collar
-        self.canvas.create_arc(cx - 16, cy - 8, cx + 16, cy + 10, start=180, extent=180, fill="#1a1a1a", outline="#1a1a1a")
-
-        # Left Arm Raised with OMNITRIX (Matching Reference Image)
-        self.canvas.create_line(cx - 30, cy + 10, cx - 62, cy - 10, fill=SKIN_TONE, width=14)
-        self.canvas.create_line(cx - 62, cy - 10, cx - 55, cy - 45, fill=SKIN_TONE, width=12)
-
-        # Detailed Omnitrix Watch on Wrist
-        self.draw_omnitrix_wrist(cx - 60, cy - 22, glow=(self.state == PetState.ACTIVATE_OMNITRIX))
-
-        # Right Arm
-        self.canvas.create_line(cx + 30, cy + 10, cx + 58, cy + 45, fill=SKIN_TONE, width=13)
-
-        # Pants & Shoes
-        self.canvas.create_line(cx - 16, cy + 70, cx - 24, cy + 125, fill="#242b21", width=16)
-        self.canvas.create_line(cx + 16, cy + 70, cx + 24, cy + 125, fill="#242b21", width=16)
-        self.canvas.create_rectangle(cx - 34, cy + 122, cx - 10, cy + 132, fill="#ffffff", outline="#1a1a1a", width=2)
-        self.canvas.create_rectangle(cx + 10, cy + 122, cx + 34, cy + 132, fill="#ffffff", outline="#1a1a1a", width=2)
-
-    def draw_sketched_heatblast(self, cx: int, cy: int):
-        """Draw high quality hand-crafted sketched Heatblast character art matching reference image."""
-        pulse = int(5 * math.sin(self.frame * 0.25))
-
-        # Outer Fire Glow Aura
-        self.canvas.create_oval(cx - 70 - pulse, cy - 120 - pulse, cx + 70 + pulse, cy + 120 + pulse, outline=HEATBLAST_ORANGE, width=3)
-        self.canvas.create_oval(cx - 55 - pulse, cy - 105 - pulse, cx + 55 + pulse, cy + 105 + pulse, outline=HEATBLAST_YELLOW, width=2)
-
-        # Head Flames (Crown of Fiery Flames from head top)
-        head_flames = [
-            (cx - 35, cy - 45), (cx - 58, cy - 115), (cx - 28, cy - 85),
-            (cx, cy - 145), (cx + 28, cy - 85), (cx + 58, cy - 115), (cx + 35, cy - 45)
-        ]
-        self.canvas.create_polygon(head_flames, fill=HEATBLAST_ORANGE, outline=HEATBLAST_YELLOW, width=3)
-
-        # Inner Bright Flame Core
-        inner_flames = [
-            (cx - 20, cy - 50), (cx - 35, cy - 100), (cx - 15, cy - 75),
-            (cx, cy - 120), (cx + 15, cy - 75), (cx + 35, cy - 100), (cx + 20, cy - 50)
-        ]
-        self.canvas.create_polygon(inner_flames, fill=HEATBLAST_YELLOW, outline="#ffffff", width=2)
-
-        # Face Mask (Magma Rock Face contour)
-        self.canvas.create_oval(cx - 26, cy - 65, cx + 26, cy - 18, fill=HEATBLAST_DARK, outline=HEATBLAST_ORANGE, width=2)
-        # Glowing Yellow Magma Eyes
-        self.canvas.create_polygon([(cx - 18, cy - 48), (cx - 6, cy - 42), (cx - 14, cy - 35)], fill=HEATBLAST_YELLOW, outline="#ffffff")
-        self.canvas.create_polygon([(cx + 6, cy - 42), (cx + 18, cy - 48), (cx + 14, cy - 35)], fill=HEATBLAST_YELLOW, outline="#ffffff")
-
-        # Magma Rock Armor Torso
-        self.canvas.create_polygon([(cx - 34, cy - 15), (cx + 34, cy - 15), (cx + 38, cy + 65), (cx - 38, cy + 65)], fill=HEATBLAST_DARK, outline=HEATBLAST_ORANGE, width=3)
-        # Magma Veins (Glowing Gold/Orange Liquid Lava Cracks)
-        self.canvas.create_line(cx - 28, cy - 5, cx, cy + 30, cx + 28, cy - 5, fill=HEATBLAST_YELLOW, width=3)
-        self.canvas.create_line(cx - 20, cy + 30, cx + 20, cy + 30, fill=HEATBLAST_YELLOW, width=3)
-        self.canvas.create_line(cx, cy + 30, cx, cy + 65, fill=HEATBLAST_YELLOW, width=3)
-
-        # Chest Mounted Omnitrix Badge (Matching Reference Art)
-        self.canvas.create_oval(cx - 14, cy + 5, cx + 14, cy + 33, fill="#ffffff", outline="#1a1a1a", width=2)
-        self.canvas.create_oval(cx - 11, cy + 8, cx + 11, cy + 30, fill="#111111", outline=HEATBLAST_ORANGE)
-        self.canvas.create_polygon([(cx, cy + 12), (cx + 6, cy + 19), (cx, cy + 26), (cx - 6, cy + 19)], fill=OMNITRIX_GREEN)
-
-        # Magma Arms & Fiery Hands
-        self.canvas.create_line(cx - 34, cy, cx - 72, cy + 35, fill=HEATBLAST_DARK, width=16)
-        self.canvas.create_line(cx + 34, cy, cx + 72, cy + 35, fill=HEATBLAST_DARK, width=16)
-        self.canvas.create_oval(cx - 82, cy + 25, cx - 62, cy + 45, fill=HEATBLAST_YELLOW, outline=HEATBLAST_ORANGE, width=2)
-        self.canvas.create_oval(cx + 62, cy + 25, cx + 82, cy + 45, fill=HEATBLAST_YELLOW, outline=HEATBLAST_ORANGE, width=2)
-
-        # Legs & Feet
-        self.canvas.create_line(cx - 18, cy + 65, cx - 28, cy + 125, fill=HEATBLAST_DARK, width=17)
-        self.canvas.create_line(cx + 18, cy + 65, cx + 28, cy + 125, fill=HEATBLAST_DARK, width=17)
-        self.canvas.create_line(cx - 22, cy + 70, cx - 26, cy + 120, fill=HEATBLAST_YELLOW, width=3)
-        self.canvas.create_line(cx + 22, cy + 70, cx + 26, cy + 120, fill=HEATBLAST_YELLOW, width=3)
-
-    # Rendering Dispatcher
-    def get_current_image(self, img_right: Optional[ImageTk.PhotoImage], img_left: Optional[ImageTk.PhotoImage]) -> Optional[ImageTk.PhotoImage]:
-        return img_right if self.direction == 1 else img_left
-
-    def draw_character(self, photo: Optional[ImageTk.PhotoImage], sketched_func):
-        cx = WINDOW_W // 2
-        cy = 170
-
-        y_offset = 0
-        if self.is_hopping:
-            self.hop_frame += 1
-            y_offset = -abs(math.sin(self.hop_frame * 0.25)) * 30
-            if self.hop_frame >= 12:
-                self.is_hopping = False
-                self.hop_frame = 0
-        else:
-            y_offset = math.sin(self.frame * 0.1) * 4
-
-        if self.render_mode == RenderMode.USER_IMAGE and photo is not None:
-            self.canvas.create_image(cx, cy + y_offset, image=photo)
-        else:
-            sketched_func(cx, cy + y_offset)
-
-    def draw_energy_ring_overlay(self, cx: int, cy: int):
-        if self.ring_photos:
-            frame_idx = (self.state_frame // 2) % len(self.ring_photos)
-            self.canvas.create_image(cx, cy, image=self.ring_photos[frame_idx])
-
-    def draw_omnitrix_wrist(self, x: int, y: int, glow: bool = False):
-        color = OMNITRIX_GREEN if glow else "#252525"
-        ring_color = WHITE_HIGHLIGHT if glow else OMNITRIX_GREEN
-        pulse = int(3 * math.sin(self.frame * 0.3)) if glow else 0
-
-        self.canvas.create_oval(x - 14 - pulse, y - 9 - pulse, x + 14 + pulse, y + 9 + pulse, fill=color, outline=ring_color, width=2)
-        self.canvas.create_oval(x - 6, y - 6, x + 6, y + 6, fill="#111111", outline="#ffffff")
-        self.canvas.create_polygon(x, y - 4, x + 4, y, x, y + 4, x - 4, y, fill=OMNITRIX_GREEN)
-
-    # Main Tick Loop
-    def tick(self):
-        self.canvas.delete("all")
-        self.frame += 1
-
-        # Desktop Movement Logic
-        if self.state in (PetState.WALK_BEN, PetState.WALK_HEATBLAST):
-            self.pos_x += self.velocity_x * self.direction
-            if self.pos_x <= 10:
-                self.pos_x = 10
-                self.direction = 1
-            elif self.pos_x >= self.screen_w - WINDOW_W - 10:
-                self.pos_x = self.screen_w - WINDOW_W - 10
-                self.direction = -1
-
-            self.root.geometry(f"+{int(self.pos_x)}+{int(self.pos_y)}")
-
-            self.state_timer -= 1
-            if self.state_timer <= 0:
-                self.state_timer = random.randint(120, 300)
-                if self.state == PetState.WALK_BEN:
-                    self.state = PetState.IDLE_BEN
-                else:
-                    self.state = PetState.IDLE_HEATBLAST
-
-        elif self.state in (PetState.IDLE_BEN, PetState.IDLE_HEATBLAST):
-            self.state_timer -= 1
-            if self.state_timer <= 0:
-                self.state_timer = random.randint(150, 320)
-                self.direction = random.choice([1, -1])
-                if self.state == PetState.IDLE_BEN:
-                    self.state = PetState.WALK_BEN
-                else:
-                    self.state = PetState.WALK_HEATBLAST
-
-        # State Machine Rendering
-        if self.state in (PetState.IDLE_BEN, PetState.WALK_BEN, PetState.PAUSED):
-            photo = self.get_current_image(self.ben_img_right, self.ben_img_left)
-            self.draw_character(photo, self.draw_sketched_ben)
-
-        elif self.state == PetState.ACTIVATE_OMNITRIX:
-            self.state_frame += 1
-            cx, cy = WINDOW_W // 2, 170
-            photo = self.get_current_image(self.ben_img_right, self.ben_img_left)
-            self.draw_character(photo, self.draw_sketched_ben)
-            self.draw_energy_ring_overlay(cx, cy)
-
-            if self.state_frame % 4 == 0:
-                self.spawn_transformation_ring(radius_start=15.0 + self.state_frame * 3)
-
-            if self.state_frame >= 18:
-                self.state = PetState.TRANSFORMING_TO_HEATBLAST
-                self.state_frame = 0
-
-        elif self.state == PetState.TRANSFORMING_TO_HEATBLAST:
-            self.state_frame += 1
-            cx, cy = WINDOW_W // 2, 170
-
-            self.draw_energy_ring_overlay(cx, cy)
-
-            for i in range(8):
-                angle = math.radians(i * 45 + self.state_frame * 12)
-                x2 = cx + math.cos(angle) * (60 + self.state_frame * 4)
-                y2 = cy + math.sin(angle) * (60 + self.state_frame * 4)
-                self.canvas.create_line(cx, cy, x2, y2, fill=OMNITRIX_GREEN, width=3)
-
-            orb_r = min(120, 20 + self.state_frame * 6)
-            self.canvas.create_oval(cx - orb_r, cy - orb_r, cx + orb_r, cy + orb_r, fill="", outline=WHITE_HIGHLIGHT, width=4)
-
-            if self.state_frame >= 14:
-                photo = self.get_current_image(self.heat_img_right, self.heat_img_left)
-                self.draw_character(photo, self.draw_sketched_heatblast)
-                self.spawn_heatblast_embers()
-            else:
-                photo = self.get_current_image(self.ben_img_right, self.ben_img_left)
-                self.draw_character(photo, self.draw_sketched_ben)
-
-            if self.state_frame >= 28:
-                self.state = PetState.IDLE_HEATBLAST
-                self.state_frame = 0
-                self.state_timer = 200
-
-        elif self.state in (PetState.IDLE_HEATBLAST, PetState.WALK_HEATBLAST):
-            photo = self.get_current_image(self.heat_img_right, self.heat_img_left)
-            self.draw_character(photo, self.draw_sketched_heatblast)
-
-            if self.frame % 2 == 0:
-                self.spawn_heatblast_embers()
-
-        elif self.state == PetState.TRANSFORMING_TO_BEN:
-            self.state_frame += 1
-            cx, cy = WINDOW_W // 2, 170
-
-            self.draw_energy_ring_overlay(cx, cy)
-
-            r_contract = max(10, 120 - self.state_frame * 5)
-            self.canvas.create_oval(cx - r_contract, cy - r_contract, cx + r_contract, cy + r_contract, outline=HEATBLAST_ORANGE, width=4)
-
-            if self.state_frame >= 12:
-                photo = self.get_current_image(self.ben_img_right, self.ben_img_left)
-                self.draw_character(photo, self.draw_sketched_ben)
-            else:
-                photo = self.get_current_image(self.heat_img_right, self.heat_img_left)
-                self.draw_character(photo, self.draw_sketched_heatblast)
-
-            if self.state_frame >= 24:
-                self.state = PetState.IDLE_BEN
-                self.state_frame = 0
-                self.state_timer = 200
-
-        # Render active particle system
-        self.update_particles()
-
-        # HUD Hint banner
-        mode_str = "Sketched Vector" if self.render_mode == RenderMode.SKETCHED_VECTOR else "Photo Image"
-        self.canvas.create_text(
-            10, 10,
-            anchor="nw",
-            text=f"[{mode_str}] Space: Transform | Right-Click: Menu",
-            fill=OMNITRIX_GREEN,
-            font=("Segoe UI", 8, "bold"),
+    def flame(self, x, y, s):
+        sway = math.sin(self.frame * 0.35 + x) * 5
+        self.shape(
+            "create_polygon",
+            [
+                (x, y + s),
+                (x - s * 0.55, y + s * 0.2),
+                (x - s * 0.35 + sway, y - s),
+                (x + sway, y - s * 0.35),
+                (x + s * 0.4, y - s * 0.85),
+                (x + s * 0.55, y + s * 0.2),
+            ],
+            FIRE,
+            YELLOW,
+            2,
+        )
+        self.shape(
+            "create_polygon",
+            [
+                (x, y + s * 0.5),
+                (x - s * 0.22, y - s * 0.1),
+                (x + sway * 0.3, y - s * 0.6),
+                (x + s * 0.28, y - s * 0.05),
+            ],
+            YELLOW,
         )
 
-        self.root.after(33, self.tick)
+    def heatblast(self, bob=0):
+        x, y = 165, 180 + bob
+        pulse = 4 + math.sin(self.frame * 0.25) * 4
+        for r in (90 + pulse, 96 + pulse, 102 + pulse):
+            self.oval((x - r, y + 15 - r, x + r, y + 15 + r), "", FIRE, 2)
+        self.shape(
+            "create_polygon",
+            [
+                (x - 38, y - 70),
+                (x - 63, y - 119),
+                (x - 25, y - 103),
+                (x - 4, y - 151),
+                (x + 10, y - 105),
+                (x + 46, y - 125),
+                (x + 34, y - 70),
+            ],
+            FIRE,
+            YELLOW,
+            3,
+        )
+        self.oval((x - 36, y - 92, x + 36, y - 26), RED, BLACK, 3)
+        self.shape("create_polygon", [(x - 24, y - 72), (x + 24, y - 72), (x + 15, y - 40), (x - 15, y - 40)], "#4C1C10", YELLOW, 2)
+        self.shape("create_polygon", [(x - 20, y - 67), (x - 3, y - 59), (x - 20, y - 52)], YELLOW, BLACK)
+        self.shape("create_polygon", [(x + 20, y - 67), (x + 3, y - 59), (x + 20, y - 52)], YELLOW, BLACK)
+        self.shape("create_polygon", [(x - 35, y - 35), (x + 35, y - 35), (x + 44, y + 76), (x - 44, y + 76)], RED, YELLOW, 3)
+        self.line([(x - 30, y - 20), (x - 90, y + 28)], RED, 23)
+        self.line([(x + 30, y - 20), (x + 90, y + 28)], RED, 23)
+        self.flame(x - 98, y + 32, 28)
+        self.flame(x + 98, y + 32, 28)
+        self.line([(x - 18, y + 72), (x - 36, y + 157)], RED, 25)
+        self.line([(x + 18, y + 72), (x + 40, y + 157)], RED, 25)
+        self.flame(x - 39, y + 164, 23)
+        self.flame(x + 43, y + 164, 23)
+        self.oval((x - 15, y - 4, x + 15, y + 26), "#3B1B12", YELLOW, 2)
+        self.shape("create_polygon", [(x, y + 1), (x + 8, y + 11), (x, y + 21), (x - 8, y + 11)], GREEN, BLACK)
+
+    def spawn_particles(self, fire=False, count=5):
+        palette = [FIRE, "#FFB000", YELLOW, "#FFFFFF"] if fire else [GREEN, "#EFFFF0", "#D7FF75", "#FFFFFF"]
+        for _ in range(count):
+            a, s = random.random() * math.tau, random.uniform(1.5, 5.5)
+            self.particles_list.append(
+                [
+                    165 + random.uniform(-55, 55),
+                    190 + random.uniform(-75, 75),
+                    math.cos(a) * s,
+                    math.sin(a) * s,
+                    random.randint(15, 34),
+                    random.uniform(2, 6),
+                    random.choice(palette),
+                ]
+            )
+
+    def update_particles(self):
+        alive = []
+        for p in self.particles_list:
+            p[0] += p[2]
+            p[1] += p[3]
+            p[3] -= 0.04
+            p[4] -= 1
+            p[5] *= 0.97
+            if p[4] > 0 and p[5] > 0.6:
+                self.oval((p[0] - p[5], p[1] - p[5], p[0] + p[5], p[1] + p[5]), p[6])
+                alive.append(p)
+        self.particles_list = alive
+
+    def transition(self, progress, to_heat):
+        ease = progress * progress * (3 - 2 * progress)
+        color = GREEN if to_heat else "#FFB000"
+        radius = 28 + ease * 155
+        for ring in range(4):
+            r = radius - ring * 18
+            if r > 4:
+                self.oval((165 - r, 190 - r, 165 + r, 190 + r), "", color, max(1, 5 - ring))
+        for angle in range(0, 360, 30):
+            a = math.radians(angle + self.frame * 5)
+            self.line(
+                [
+                    (165 + math.cos(a) * 42, 190 + math.sin(a) * 42),
+                    (165 + math.cos(a) * (radius + 25), 190 + math.sin(a) * (radius + 25)),
+                ],
+                color,
+                2,
+            )
+        self.spawn_particles(fire=not to_heat, count=6)
+        if progress > 0.78:
+            r = 40 + ((progress - 0.78) / 0.22) * 170
+            self.oval((165 - r, 190 - r, 165 + r, 190 + r), "", "#FFFFFF" if to_heat else YELLOW, 5)
+
+    def tick(self):
+        self.frame += 1
+        self.c.delete("all")
+        bob = math.sin(self.frame * 0.12) * 3
+        if self.state == "ben":
+            self.ben(bob)
+        elif self.state == "heatblast":
+            self.heatblast(bob)
+            self.spawn_particles(True, 1)
+        else:
+            progress = min(1.0, self.tframe / 42.0)
+            to_heat = self.state == "transforming"
+            if progress < 0.55:
+                self.ben(bob) if to_heat else self.heatblast(bob)
+            else:
+                self.heatblast(bob) if to_heat else self.ben(bob)
+            self.transition(progress, to_heat)
+            self.tframe += 1
+            if self.tframe >= 42:
+                self.state = "heatblast" if to_heat else "ben"
+                self.tframe = 0
+        self.update_particles()
+        self.c.create_text(
+            8,
+            10,
+            anchor="nw",
+            text="SPACE: transform | P: pause | Right-click: exit",
+            fill=GREEN,
+            font=("Segoe UI", 8, "bold"),
+        )
+        if not self.paused and self.state not in ("transforming", "returning"):
+            self.x += self.dx * (0.7 if self.state == "heatblast" else 1.0)
+            if self.x <= 0 or self.x >= self.sw - W:
+                self.dx *= -1
+        self.root.geometry(f"+{int(self.x)}+{int(self.y)}")
+        self.root.after(FPS, self.tick)
 
 
 def main():
     root = tk.Tk()
-    Ben10PetEngine(root)
+    Ben10Pet(root)
     root.mainloop()
 
 

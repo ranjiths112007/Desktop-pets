@@ -9,12 +9,12 @@ BASE_DIR = Path(__file__).resolve().parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from ben10_pet import Ben10PetEngine
+from ben10_pet import Ben10Pet
 
 
 def main():
     root = tk.Tk()
-    app = Ben10PetEngine(root)
+    app = Ben10Pet(root)
     root.mainloop()
 
 
