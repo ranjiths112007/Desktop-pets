@@ -102,14 +102,16 @@ class Ben10PetEngine:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("Ben 10 Desktop Pet")
-        self.root.overrideredirect(True)
-        self.root.attributes("-topmost", True)
-        self.root.configure(bg=TRANSPARENT_COLOR)
 
+        # Initial window configuration
+        self.root.configure(bg=TRANSPARENT_COLOR)
         try:
             self.root.attributes("-transparentcolor", TRANSPARENT_COLOR)
         except tk.TclError:
             pass
+
+        self.root.overrideredirect(True)
+        self.root.attributes("-topmost", True)
 
         self.canvas = tk.Canvas(
             root,
@@ -120,11 +122,14 @@ class Ben10PetEngine:
         )
         self.canvas.pack(fill="both", expand=True)
 
-        # Screen dimensions & positioning
-        self.screen_w = root.winfo_screenwidth()
-        self.screen_h = root.winfo_screenheight()
-        self.pos_x = 100
-        self.pos_y = max(50, self.screen_h - WINDOW_H - 90)
+        # Force Tkinter geometry update to get accurate screen bounds
+        self.root.update_idletasks()
+        self.screen_w = self.root.winfo_screenwidth()
+        self.screen_h = self.root.winfo_screenheight()
+
+        # Center/Bottom-Right initial placement for high visibility
+        self.pos_x = max(50, (self.screen_w - WINDOW_W) // 2)
+        self.pos_y = max(50, (self.screen_h - WINDOW_H) // 2)
         self.velocity_x = 3.0
         self.direction = 1  # 1 = right, -1 = left
 
@@ -165,8 +170,11 @@ class Ben10PetEngine:
         self.context_menu.add_separator()
         self.context_menu.add_command(label="❌ Exit Desktop Pet (Esc)", command=self.root.destroy)
 
-        self.root.focus_force()
+        # Bring window to front & set geometry
         self.root.geometry(f"{WINDOW_W}x{WINDOW_H}+{int(self.pos_x)}+{int(self.pos_y)}")
+        self.root.deiconify()
+        self.root.lift()
+        self.root.focus_force()
 
         # Start animation tick loop (~30 FPS)
         self.tick()
